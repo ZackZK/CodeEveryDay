@@ -22,6 +22,7 @@ var (
 // AddAPPStartHook is used to register the hookfunc
 // The hookfunc will run in beego.Run()
 // such as initiating sessin, starting middleware, building template, starting admin control and so on
+
 func AddAPPStartHook(hf ...hookfunc) {
 	hooks = append(hooks, hf...)
 }
