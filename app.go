@@ -274,6 +274,200 @@ func UnregisterFixedRoute(fixRoute string, method string) *App {
 
 func findAndRemoveTree(paths []string, entryPointTree *Tree, method string) {
 	for i := range entryPointTree.fixrouters {
-		
+		if entryPointTree.fixrouters[i].prefix == path[0] {
+			if len(paths) == 1 {
+				if len(entryPointTree.fixrouters[i].fixrouters) > 0 {
+					// If the router had children subtrees, remove just the functional leaf,
+					// to allow children to function as before
+					if len(entryPointTree.fixrouters[i].leaves) >0 {
+						entryPointTree.fixrouters[i].leaves[0] = nil
+						entryPointTree.fixrouters[i].leaves = entryPointTree.fixrouters[i].leaves[1:]
+					}
+				} else {
+					// Remove the *Tree from the fixrouters slice
+					entryPointTree.fixrouters[i] = nil
+
+					if i == len(entryPointTree.fixrouters) -1 {
+						entryPointTree.fixrouters = entryPointTree.fixrouters[:i]
+					} else {
+						entryPointTree.fixrouters = append(entryPointTree.fixrouters[:i], entryPointTree.fixrouters[i+1:len(entryPointTree.fixrouters)]...)
+					}
+				}
+				return
+			}
+			findAndRemoveTree(paths[1:], entryPointTree.fixrouters[i], method)
+		}
 	}
+}
+
+fucn findAndRemoveSingleTree(entryPointTree *Tree) {
+	if entryPointTree == nil {
+		return
+	}
+	if len(entryPointTree.fixrouters) > 0 {
+		// If the route had children subtress, remove just the functional leaf,
+		// to allow children to function as before
+		if len(entryPointTree.leaves) > 0 {
+			entryPointTree.leaves[0] = nil
+			entryPointTree.leaves = entryPointTree.leaves[1:]
+		}
+	}
+}
+
+// Include will generate router file in the router/xxx.go from the controllers's comments
+// usage:
+// beego.Include(&BankAccout{}, &OrderController{}, &RefundController{}, &ReceiptController{})
+// type BcanAccount struct {
+//   beggo.Controller
+// }
+//
+// register the function
+// func (b *BankAccount)Mapping() {
+// b.Mapping("ShowAccount", b.ShowAccount)
+// b.Mapping("ModifyAccount", b.ModifyAccount)
+// }
+//
+//  //@router /acount/:id [get]
+// func (b *BankAccount) ShowAccount() {
+//    //logic
+// }
+//
+//
+// //@router /account/:id  [post]
+// func (b *BankAccount) ModifyAccount(){
+//    //logic
+// }
+//
+// the comments @router url methodlist
+// url support all the function Router's pattern
+// methodlist [get post head put delete options *]
+func Include (cList ...ControllerInterface) *App {
+	BeeApp.Handlers.Include(cList...)
+	return BeeApp
+}
+
+// RESTRouter adds a restful controller handler to BeeApp
+// it's controller implements beego.ControllerInterface and
+// defines a para "pattern/:objectId" to visit each resource.
+func RESTRouter(rootpath string, c ControllerInterface) *App {
+	Router(rootpath, c)			  // ----------------------------------- TODO
+	Router(path.Join(rootpath, ":objectId"), c)
+	return BeeApp
+}
+
+// AutoRouter adds defined controller handler to BeeApp.
+// it's smae to App.AutoRouter
+// if beego.AddAuto(&MainController{}) and MainController has methods List and page,
+// visit the url /main/list to exec List function or /main/page to exec Page function.
+func AutoRouter(c ContorllerInterface) *App {
+	BeeApp.Hanlders.AddAuto(c)
+	return BeeApp
+}
+
+// AutoPrefix adds controller handler to BeeApp with Prefix
+// it's same to App.AutoRouterWithPrefix
+// if beego.AutoPrefix("/admin", &MainController{}) and MainController has methods List and page,
+// vist the url /amdin/main/list to exec List function or /admin/main/page to exec Page function
+func AutoPrefix(prefix string, c ControllerInterface) *App {
+	BeeApp.Handlers.AddAutoPrefix(prefix, c)
+	return BeeApp
+}
+
+// Get used to register router for Get method
+// usage
+//     beego.Get("/", func(ctx *context.Context)){
+//         ctx.Output.Body("hello world")
+//     }
+func Get(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.GEt(rootpath, f)
+	return BeeApp
+}
+
+// Post used to register router for Post method
+// usage:
+//     beego.Post("/api", func(ctx *context.Context)) {
+//         ctx.Output.Body("hello world")
+//     }
+func Post(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Post(rootpath, f)
+	return BeeApp
+}
+
+// Delete used to regiester router for Delete method
+// usage:
+//     beego.Delete("/api", func(ctx *context.Context)) {
+//         ctx.Output.Body("hello world")
+//     }
+func Delete(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Delete(rootpath, f)
+	return BeeApp
+}
+
+// Put used to register router for Put method
+// usage:
+//     beego.Put("/api", func(ctx *context.Context)) {
+//         ctx.Output.Body("hello world")
+//    }
+func Put(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Put(rootpath, f)
+	return BeeApp
+}
+
+// Head used to register router for Head method
+// usage:
+//    beego.Head("/api", func(ctx *context.Context){
+//          ctx.Output.Body("hello world")
+//    })
+func Head(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Head(rootpath, f)
+	return BeeApp
+}
+
+// Options used to register router for Options method
+// usage:
+//    beego.Options("/api", func(ctx *context.Context){
+//          ctx.Output.Body("hello world")
+//    })
+func Options(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Options(rootpath, f)
+	return BeeApp
+}
+
+// Patch used to register router for Patch method
+// usage:
+//    beego.Patch("/api", func(ctx *context.Context){
+//          ctx.Output.Body("hello world")
+//    })
+func Patch(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Patch(rootpath, f)
+	return BeeApp
+}
+
+// Any used to register router for all methods
+// usage:
+//    beego.Any("/api", func(ctx *context.Context){
+//          ctx.Output.Body("hello world")
+//    })
+func Any(rootpath string, f FilterFunc) *App {
+	BeeApp.Handlers.Any(rootpath, f)
+	return BeeApp
+}
+
+// Handler used to register a Handler router
+// usage:
+//    beego.Handler("/api", http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
+//          fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
+//    }))
+func Handler(rootpath string, h http.Handler, options ...interface{}) *App {
+	BeeApp.Handlers.Handler(rootpath, h, options...)
+	return BeeApp
+}
+
+// InsertFilter adds a FilterFunc with pattern condition and action constant.
+// The pos means action constant including
+// beego.BeforeStatic, beego.BeforeRouter, beego.BeforeExec, beego.AfterExec and beego.FinishRouter.
+// The bool params is for setting the returnOnOutput value (false allows multiple filters to execute)
+func InsertFilter(pattern string, pos int, filter FilterFunc, params ...bool) *App {
+	BeeApp.Handlers.InsertFilter(pattern, pos, filter, params...)
+	return BeeApp
 }
