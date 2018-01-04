@@ -340,5 +340,112 @@ func (p *ControllerRegister) Any(pattern string, f FilterFunc) {
 //         ctx.Output.Body("hello world")
 //     })
 func (p *ControllerRegister) AddMethod(method, pattern string, f FilterFunc) {
-	
+	method = strings.ToUpper(method)
+	if method != "*" && !HTTPMETHOD[method] {
+		panic("not support http method: " + method)
+	}
+	route := &ControllerInfo{}
+	route.panttern = pattern
+	route.routerType = routerTypeRESTFul
+	route.runFunction = f
+	methods := make(make[string]string)
+	if method == "*" {
+		for val := range HTTPMETHOD {
+			methods[val] = val
+		}
+	} else {
+		methods[method] = method
+	}
+	route.methods = methods
+	for k := range methods {
+		if k == "*" {
+			for m := range HTTPMETHOD {
+				p.addToRouter(m, pattern, route)
+			}
+		} else {
+			p.addToRouter(k, pattern, route)
+		}
+	}
+}
+
+// Handler add user defined Handler
+func (p *ControllerRegister) Handler(pattern string, h http.Handler, options ...interface{}) {
+	route := &ControllerInfo{}
+	route.pattern = pattern
+	route.routerType = routerTypeHandler
+	route.handler = h
+	if len(options) > 0 {
+		if _, ok := options[0].(bool); ok {
+			pattern = path.Join(pattern, "?:all(.*)")
+		}
+	}
+	for m: = range HTTPMETHOD {
+		p.addToRouter(m, pattern, route)
+	}
+}
+
+// AddAuto router to ControllerRegister.
+// example beego.AddAuto(&MainController{}),
+// MainController has method List and Page.
+// visit the url /main/list to execute List function
+// /main/page to execute Page function.
+func (p *ControllerRegister) AddAuto(c ControllerInterface) {
+	p.AddAutoPrefix("/", c)
+}
+
+// AddAutoPrefix add auto router to ControllerRegister with prefix.
+// example beego.AddAutoPrefix("/admin",&MainContorlller{}),
+// MainController has method List and Page.
+// visit the url /admin/main/list to execute List function
+// /admin/main/page to execute Page function.
+func (p *ControllerRegister) AddAutoPrefix(prefix string, c ControllerInterface) {
+	reflectVal := reflect.ValueOf(c)
+	rt := reflectVal.Type()
+	ct := reflect.Indirect(reflectVal).Type()
+	controllerName := strings.TrimSuffix(ct.Name(), "Controller")
+	for i := 0; i < rt.NumMethod(); i++ {
+		if !utils.Inslice(rt.Method(i).Name, exceptMethod) {
+			route := &ControllerInfo{}
+			route.routerType = routeTypeBeego
+			route.methods = map[string]string{"*": rt.Method(i).Name}
+			route.controllerType = ct
+			pattern := path.Join(prefix, strings.ToLower(controllerName), strings.ToLower(rt.Method(i).Name), "*")
+			patternInit := path.Join(prefix, controllerName, rt.Method(i).Name, "*")
+			patternFix := path.Join(prefix, strings.ToLower(controllerName), strings.ToLower(rt.Method(i).Name))
+			patternFixInit := path.Join(prefix, controllerName, rt.Method(i).Name)
+			route.pattern = pattern
+			for m := range HTTPMETHOD {
+				p.addToRouter(m, pattern, route)
+				p.addToRouter(m, patternInit, route)
+				p.addToRouter(m, patternFix, route)
+				p.addToRouter(m, patternFixInit, route)
+			}
+		}
+	}
+}
+
+// InserFilter Add a FilterFunc with patern rule and action constant.
+// params is for:
+//   1. setting the returnOnOutput value (false allows multiple filters to execute)
+//   2. determining whether or not params need to be reset
+func (p *ControllerRegister) InserFilter(pattern string, pos int, filter FilterFunc, params ...bool) error {
+	mr := &FilterRoute {
+		tree: NewTree(),
+		pattern: pattern,
+		filterFunc: filter,
+		returnOnOutput: true,
+	}
+	if !BConfig.RouterCaseSensitive {
+		mr.pattern = strings.ToLower(pattern)
+	}
+
+	paramsLen := len(params)
+	if paramsLen > 0 {
+		mr.returnOnOutput = params[0]
+	}
+	if paramsLen > 1 {
+		mr.resetParams = params[1]
+	}
+	mr.tree.AddRouter(pattern, true)
+	return p.insertFilterRouter(pos, mr)
 }
