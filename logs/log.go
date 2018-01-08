@@ -266,4 +266,112 @@ func (b1 *BeeLogger) writeMsg(logLevel int, msg string, v ...interface{}) error 
 	return nil
 }
 
+// SetLevel Set log message level.
+// If message level (such as LevelDebug) is higher than logger level (such as LevelWarning),
+// log providers will not even sent the message.
+func (b1 *BeeLogger) SetLevel(l int) {
+	b1.Level = l
+}
 
+// SetLogFuncCallDepth set log funcCallDepth
+func (b1 *BeeLogger) SetLogFuncCallDepth(d int) {
+	b1.loggerFuncCallDepth = d
+}
+
+// GetLogFuncCallDepth return log funcCallDepth for wrapper
+func (bl *BeeLogger) GetLogFuncCallDepth() int {
+	return bl.loggerFuncCallDepth
+}
+
+// EnalbeFuncCallDepth enable log funcCallDepth
+func (bl *BeeLogger) EnalbeFuncCallDepth(b bool) {
+	bl.enableFunCallDepth = b
+}
+
+// start logger chan reading.
+// when chan is not empty, write logs.
+func (bl *BeeLogger) startLogger() {
+	gameover := false
+	for {
+		select {
+		case bm := <-bl.msgChan:
+			bl.writeToLoggers(bm.when, bm.msg, bm.level)
+			logMsgPool.Put(bm)
+		case sg := <-bl.signalChan:
+			// Now should only send "flush" or "close" to bl.signalChan
+			bl.flush()
+			if sg == "close" {
+				for _, l := range bl.outputs {
+					l.Destroy()
+				}
+				bl.outputs = nil
+				gameover = true
+			}
+			b1.wg.Done()
+		}
+		if gameover {
+			break
+		}
+	}
+}
+
+// Emergency log EMERGENCY level message.
+func (bl *BeeLogger) Emergency(format string, v ...interface{}) {
+	if LevelEmergency > bl.level {
+		return
+	}
+	bl.wirteMsg(LevelEmergency, format, v...)
+}
+
+// Flush fulsh all chan data.
+func (bl *BeeLogger) Flush() {
+	if bl.asynchronous {
+		bl.signalChan <- "flush"
+		bl.wg.Wait()
+		bl.wg.Add(1)
+		return
+	}
+	b1.flush()
+}
+
+// Close close logger, flush all chan data and destroy all adapters in BeeLogger.
+func (bl *BeeLogger) Close() {
+	if bl.asynchronous {
+		bl.signalChan <- "close"
+		bl.wg.Wait()
+		close(bl.msgChan)
+	} else {
+		bl.flush()
+		for _, l := range bl.outputs {
+			l.Destroy()
+		}
+		bl.outputs = nil
+	}
+	close(bl.signalChan)
+}
+
+// Reset close all outputs, and set bl.outputs to nil
+func (bl *BeeLogger) Reset() {
+	bl.Flush()
+	for _, l := range bl.outputs {
+		l.Destory()
+	}
+	bl.outputs = nil
+}
+
+func (bl *BeeLogger) flush() {
+	if bl.asynchronous {
+		for {
+			if len(bl.msgChan) > 0 {
+				bm := <-bl.msgChan
+				bl.writeToLoggers(bm.when, bm.msg, bm.level)
+				logMsgPool.Put(bm)
+				continue
+			}
+			break
+		}
+	}
+	for _, l := range bl.outputs {
+		l.Flush()
+	}
+}
