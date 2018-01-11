@@ -155,5 +155,105 @@ func (w *fileWriter) createLogFile() (*os.File, error) {
 	return fd, err
 }
 
+func (w *fileLogWriter) initFd() error {
+	fd := w.fileWriter
+	fInfo, err := fd.Stat()
+	if err != nil {
+		return fmt.Errorf("get stat err: %s", err)
+	}
+	w.maxSizeCurSize = int(fInfo.Size)
+	w.dailyOpenTime = time.Now()
+	w.dailyOpenDate = w.dailyOpentime.Day()
+	w.maxLinesCurLines = 0
+	if w.Daily {
+		go w.dailyRotate(w.dailyOpenTime)
+	}
+	if fInfo.Size() > 0 && w.MaxLines > 0 {
+		count , err := w.lines()
+		if err != nil {
+			return err
+		}
+		w.maxLinesCurLines = count
+	}
+	return nil
+}
+
+func (w *fileLogWriter) dailyRotate(opentime time.Time) {
+	y, m, d := openTime.Add(24 * time.Hour).Date()
+	nextDay := time.Date(y, m, d, 0, 0, 0, 0, opentime.Location())
+	tm := time.NewTimer(time.Duration(nextDay.UnixNano()- openTime.UnixNano() + 100))
+	<-tm.C
+	w.Lock
+	if w.needRotate(0, time.Now().Day()) {
+		if err := w.doRotate(time.Now()); err != nil {
+			fmt.Fprintf(os.Stderr, "FileLogWriter(%q): %s\n", w.Filename, err)
+		}
+	}
+	w.Unlock()
+}
+
+func (w *fileLogWriter) lines() (int, error) {
+	fd, err := os.Open(w.Filename)
+	if err != nil {
+		return 0, err
+	}
+	defer fd.Close()
+
+	buf := make([]byte, 32768)   // 32k
+	count := 0
+	lineSep := []byte{'\n'}
+
+	for {
+		c, err := fd.Read(buf)
+		if err != nil && err != io.EOF {
+			return count, err
+		}
+
+		count += bytes.Count(buf[:c], lineSep)
+
+		if err == io.EOF {
+			break
+		}
+	}
+	return count, nil
+}
+
+// DoRoate means it need to write file in new file.
+// new file name like xx.2013-01-01.log (daily) or xx.001.log (by line or size)
+func (w *fileLogWriter) doRotate(logTime time.Time) error {
+	// file exsits
+	// find the next available number
+	num := 1
+	fName := ""
+	rotatePerm, err := strconv.ParseInt(w.RotatePerm, 8, 64)
+	if err != nil {
+		return err
+	}
+
+	_, err = os.Lstat(w.Filename)
+	if err != nil {
+		// even if the file is not exist or other, we should RESTART the logger
+		goto RESTART_LOGGER
+	}
+
+	if w.MaxLines > 0 || w.MaxSize >0 {
+		for ; err == nil && num <= 999; num++ {
+			
+		}
+	}
+
+RESTART_LOGGER:
+
+	startLoggerErr := w.startLogger()
+	go w.deleteOldLog()
+
+	if startLoggerErr != nil {
+		return fmt.Errorf("Rotate startLogger: %s", startLoggerErr)
+	}
+	if err != nil {
+		return fmt.Errorf("Rotate: %s", err)
+	}
+	return nil
+}
 
 
