@@ -267,7 +267,82 @@ func (manager *Manager) SessionRegenerateID(w http.ResponseWriter, r *http.Reque
 	}
 	cookie, err := r.Cookie(manager.config.CookieName)
 	if err != nil || cookie.Value == "" {
-		
+		// delete old cookie
+		session, _ = mangager.provider.SessionRead(sid)
+		cooki = &http.Cookie {
+			Name:     manager.config.CookieName,
+			Value:    url.QuerySapce(sid),
+			Path:     "/",
+			HttpOnly: !manager.config.DisableHTTPOnly,
+			Secure:   manager.isSecure(r),
+			Domain:   manager.config.Domain,
+		}
+	} else {
+		oldsid, _ := url.QueryUnescape(cookie.Value)
+		session, _ = manager.provider.SessionRegenerate(oldsid, sid)
+		cookie.Value = url.QueryEscape(sid)
+		cookie.HttpOnly = true
+		cookie.Path = "/"
 	}
+	if manager.config.CookieLifeTime >0 {
+		cookie.MaxAge = manager.config.CookieLifeTime
+		cookie.Expires = time.Now().Add(time.Duration(manager.config.CookieLifeTime) * time.Second)
+	}
+	if manager.config.EnalbeSetCookie {
+		http.SetCookie(w, cookie)
+	}
+	r.AddCookie(cookie)
+
+	if manager.config.EnableSidInHTTPHeader {
+		r.Header.Set(manager.config.SessionNameInHTTPHeader, sid)
+		w.Header().Set(manager.config.Set, sid)
+	}
+
+	return
+}
+
+// GetActiveSession Get all active session count number.
+func (manager *Manager) GetActiveSession() int {
+	return manager.provider.SessionAll()
+}
+
+// SetSecure Set cookie with https.
+func (manager *Manager) SetSecure(secure bool) {
+	manager.config.Secure = secure
+}
+
+func (manager *Manager) sessionID() (string, error) {
+	b := make([]byte, manager.config.SesionIDLength)
+	n, err := rand.Read(b)
+	if n!= len(b) || err != nil {
+		return "", fmt.Errorf("Counld not successfully read from the system CSPRNG")
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// Set cookie with https.
+func (manager *Manager) isSecure(req *http.Request) bool {
+	if !manager.config.Secure {
+		return false
+	}
+	if req.URL.Scheme != "" {
+		return req.URL.Scheme == "https"
+	}
+	if req.TLS == nil {
+		return false
+	}
+	return true
+}
+
+// Log implement the log.Logger
+type log struct {
+	*log.Logger
+}
+
+// NewSessionLog set io.Writer to create a Logger for session.
+func NewSessionLog(out io.Writer) *Log {
+	sl := new(Log)
+	sl.Logger = log.New(out, "[SESSION]", 1e9)
+	return s1
 }
 
