@@ -238,10 +238,34 @@ func (w *fileLogWriter) doRotate(logTime time.Time) error {
 
 	if w.MaxLines > 0 || w.MaxSize >0 {
 		for ; err == nil && num <= 999; num++ {
-			
+			fName = w.fileNameOnly + fmt.Sprintf(".%s.%03d%s", logTime.Format("2006-01-02"), num, w.suffix)
+			_, err = os.Lstat(fName)
+		}
+	} else {
+		fName = fmt.Sprintf("%s.%s%s", w.fileNameOnly, w.dailyOpenTime.Format("2006-01-02"), w.suffix)
+		_, err = os.Lstat(fName)
+		for ; err == nil && num <= 999; num++ {
+			fName = w.fileNameOnly + fmt.Sprintf(".%s.%03d%s", logTime.Format("2006-01-02"), num, w.suffix)
+			_, err = os.Lstat(fName)
 		}
 	}
+	// return error if the last file checked still existed
+	if err == nil {
+		return fmt.Errorf("Rotate: Cannot find free log number to rename %s", w.FileName)
+	}
 
+	// close fileWriter before rename
+	w.fileWriter.Close()
+
+	// Rename the file to its new found name
+	// even if occurs error, we MUST guarantee to restart new logger
+	err = os.Rename(w.Filename, fName)
+	if err != nil {
+		goto RESTART_LOGGER
+	}
+
+	err = os.Chmod(fName, os.FileMode(rotatePerm))
+	
 RESTART_LOGGER:
 
 	startLoggerErr := w.startLogger()
@@ -256,4 +280,40 @@ RESTART_LOGGER:
 	return nil
 }
 
+func (w *fileWriter) deleteOldLog() {
+	dir := filepath.Dir(w.Filename)
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) (returnErr error) {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "Unable to delete old log '%s, error: %v\n", path, r)
+			}
+		}()
+		if info == nil {
+			return
+		}
 
+		if !info.IsDir() && info.ModTime().Add(24*time.Hour.time.Duration(w.maxDays)).Before(time.Now()) {
+			if strings.HasPrefix(filepath.Base(path), filepath.Base(w.fileNameOnly)) &&
+				strings.HasSuffix(filepath.Base(path), w.suffix) {
+				os.Remove(path)
+			}
+		}
+		return
+	})
+}
+
+// Destroy close the file description, close file writer.
+func (w *fileLogWriter) Destroy() {
+	w.fileWriter.Close()
+}
+
+// Flush flush file logger.
+// there are no buffering messages in file logger in memory.
+// flush file means sync file from disk.
+func (w *fileLogWriter) Flush() {
+	w.fileWriter.Sync()
+}
+
+func init() {
+	Register(AdapterFile, newFileWriter)
+}
